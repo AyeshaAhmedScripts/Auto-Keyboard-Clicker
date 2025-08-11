@@ -1,5 +1,5 @@
 import tkinter as tk
-from tkinter import messagebox, Toplevel
+from tkinter import messagebox
 import threading
 import time
 from pynput import keyboard
@@ -23,6 +23,7 @@ special_keys_map = {
     "tab": keyboard.Key.tab,
     "esc": keyboard.Key.esc,
     "backspace": keyboard.Key.backspace,
+    "f7": keyboard.Key.f7
 }
 
 def get_key_object(key_name):
@@ -46,7 +47,16 @@ def key_press_loop(interval, key_obj):
 def on_press(key):
     global start_key, target_key, clicking, hold_mode, hold_active
     try:
-        k = key.char.lower() if hasattr(key, 'char') and key.char else key.name.lower()
+        if hasattr(key, 'char') and key.char:
+            k = key.char.lower()
+        else:
+            # Better matching for special keys
+            for name, val in special_keys_map.items():
+                if key == val:
+                    k = name
+                    break
+            else:
+                return
     except:
         return
 
@@ -55,9 +65,11 @@ def on_press(key):
             if not hold_active:
                 controller.press(target_key)
                 hold_active = True
+                root.title("Keyboard Auto Key Presser - ACTIVE (Hold)")
             else:
                 controller.release(target_key)
                 hold_active = False
+                root.title("Keyboard Auto Key Presser")
         else:
             toggle_clicking()
 
@@ -81,9 +93,10 @@ def toggle_clicking():
             clicking = False
             return
 
+        root.title("Keyboard Auto Key Presser - ACTIVE")
         threading.Thread(target=key_press_loop, args=(interval, target_key), daemon=True).start()
     else:
-        pass
+        root.title("Keyboard Auto Key Presser")
 
 def save_settings():
     global start_key, target_key, hold_mode, hold_active, clicking
@@ -107,59 +120,28 @@ def save_settings():
         controller.release(target_key)
         hold_active = False
     clicking = False
+    root.title("Keyboard Auto Key Presser")
 
     mode_text = "Hold Mode (toggle)" if hold_mode else "Normal Mode"
     messagebox.showinfo("Settings Saved", f"Hotkey: {start_key.upper()}\nTarget Key: {tk_input.upper()}\nMode: {mode_text}")
 
-# ---------------- POPUP KEY SELECTOR ----------------
-def open_key_selector():
-    popup = Toplevel(root)
-    popup.title("Select Target Key")
-    popup.configure(bg="#f0f2f5")
-    popup.resizable(False, False)
-    popup.grab_set()  # Make modal
-    popup.geometry("300x440")
+# Handle closing
+def on_closing():
+    global clicking, hold_active
+    clicking = False
+    if hold_active:
+        controller.release(target_key)
+        hold_active = False
+    root.destroy()
 
-    def choose_key(k):
-        target_key_var.set(k)
-        popup.destroy()
-
-    # Letters
-    frame_letters = tk.LabelFrame(popup, text="Letters", bg="#f0f2f5")
-    frame_letters.pack(padx=5, pady=5, fill="x")
-    for i, letter in enumerate("abcdefghijklmnopqrstuvwxyz"):
-        tk.Button(frame_letters, text=letter.upper(), width=4,
-                  command=lambda l=letter: choose_key(l)).grid(row=i//6, column=i%6, padx=2, pady=2)
-
-    # Numbers
-    frame_nums = tk.LabelFrame(popup, text="Numbers", bg="#f0f2f5")
-    frame_nums.pack(padx=5, pady=5, fill="x")
-    for i in range(10):
-        tk.Button(frame_nums, text=str(i), width=4,
-                  command=lambda n=str(i): choose_key(n)).grid(row=i//5, column=i%5, padx=2, pady=2)
-
-    # Special Keys
-    frame_special = tk.LabelFrame(popup, text="Special Keys", bg="#f0f2f5")
-    frame_special.pack(padx=5, pady=5, fill="x")
-    specials = ["shift", "ctrl", "alt", "space", "enter", "tab", "esc", "backspace"]
-    for i, sk in enumerate(specials):
-        tk.Button(frame_special, text=sk.title(), width=8,
-                  command=lambda s=sk: choose_key(s)).grid(row=i//2, column=i%2, padx=2, pady=2)
-
-# Disable interval fields in Hold Mode
-def toggle_interval_fields():
-    state = "disabled" if hold_var.get() else "normal"
-    for entry in interval_entries:
-        entry.config(state=state)
-
-# ---------------- GUI ----------------
+# GUI setup
 root = tk.Tk()
 root.title("Keyboard Auto Key Presser")
-root.geometry("350x560")
+root.geometry("350x500")
 root.configure(bg="#f0f2f5")
 
-# Title
-tk.Label(root, text="Keyboard Auto Key Presser", font=("Arial", 14, "bold"), bg="#f0f2f5").pack(pady=10)
+title_label = tk.Label(root, text="Keyboard Auto Key Presser", font=("Arial", 14, "bold"), bg="#f0f2f5")
+title_label.pack(pady=10)
 
 # Interval Frame
 interval_frame = tk.LabelFrame(root, text="Press Interval (Normal Mode)", font=("Arial", 10, "bold"), bg="#f0f2f5")
@@ -168,14 +150,11 @@ interval_frame.pack(padx=10, pady=10, fill="x")
 hours_var = tk.StringVar()
 minutes_var = tk.StringVar()
 seconds_var = tk.StringVar()
-milliseconds_var = tk.StringVar(value="100")  # default 100 ms
+milliseconds_var = tk.StringVar(value="100") # default
 
-interval_entries = []
 for text, var in [("Hours", hours_var), ("Minutes", minutes_var), ("Seconds", seconds_var), ("Milliseconds", milliseconds_var)]:
     tk.Label(interval_frame, text=text, bg="#f0f2f5").pack()
-    e = tk.Entry(interval_frame, textvariable=var, width=15)
-    e.pack(pady=2)
-    interval_entries.append(e)
+    tk.Entry(interval_frame, textvariable=var, width=15).pack(pady=2)
 
 # Key Settings Frame
 key_frame = tk.LabelFrame(root, text="Hotkey & Target Key Settings", font=("Arial", 10, "bold"), bg="#f0f2f5")
@@ -187,32 +166,23 @@ target_key_var = tk.StringVar(value="a")
 tk.Label(key_frame, text="Start/Stop Key", bg="#f0f2f5").pack()
 tk.Entry(key_frame, textvariable=key_var, width=15).pack(pady=2)
 
-tk.Label(key_frame, text="Target Key", bg="#f0f2f5").pack()
-frame_target = tk.Frame(key_frame, bg="#f0f2f5")
-frame_target.pack()
-tk.Entry(frame_target, textvariable=target_key_var, width=15).pack(side="left", padx=2)
-tk.Button(frame_target, text="Select Key", command=open_key_selector, bg="#cccccc").pack(side="left", padx=2)
+tk.Label(key_frame, text="Target Key (e.g., a, space, ctrl)", bg="#f0f2f5").pack()
+tk.Entry(key_frame, textvariable=target_key_var, width=15).pack(pady=2)
 
 hold_var = tk.BooleanVar()
-tk.Checkbutton(key_frame, text="Hold Mode", variable=hold_var, bg="#f0f2f5", command=toggle_interval_fields).pack(pady=5)
+tk.Checkbutton(key_frame, text="Hold Mode", variable=hold_var, bg="#f0f2f5").pack(pady=5)
 
-# Save Button
+# Save button
 tk.Button(root, text="💾 Save Settings", font=("Arial", 11, "bold"), bg="#7EBA80", fg="white", command=save_settings).pack(pady=15, ipadx=5, ipady=3)
 
 # Info label
-tk.Label(root, text="Normal Mode: Press hotkey to start/stop\nHold Mode: Press once to hold, again to release",
-         bg="#f0f2f5", fg="#333", wraplength=300, justify="center").pack(pady=5)
+info_label = tk.Label(root, text="Normal Mode: Press hotkey to start/stop\nHold Mode: Press once to hold, again to release", 
+                      bg="#f0f2f5", fg="#333", wraplength=300, justify="center")
+info_label.pack(pady=5)
 
-# Start Listener
+# Start keyboard listener
 listener = keyboard.Listener(on_press=on_press)
 listener.start()
 
-# Release held key on exit
-def on_closing():
-    if hold_active:
-        controller.release(target_key)
-    root.destroy()
-
 root.protocol("WM_DELETE_WINDOW", on_closing)
-
 root.mainloop()
